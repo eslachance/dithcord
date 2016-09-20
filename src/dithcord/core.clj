@@ -1,9 +1,8 @@
 (ns dithcord.core
-  (:gen-class)
-  (:require [clojure.core.async :as async :refer :all :as async]
+  (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put!]]
             [clj-http.client :as http]
             [gniazdo.core :as ws]
-            [cheshire.core :refer [parse-string generate-string]]))
+            [cheshire.core :as json]))
 
 (def API "https://discordapp.com/api/v6")
 (def CDN "https://cdn.discordapp.com")
@@ -89,67 +88,55 @@
 
 (defn identify [token]
   {:token token
-   :properties {
-                 :$os "linux"
-                 :$browser "dithcord"
-                 :$device "dithcord"
-                 :$referrer ""
-                 :$referring_domain ""
-                 }
+   :properties {:$os "linux"
+                :$browser "dithcord"
+                :$device "dithcord"
+                :$referrer ""
+                :$referring_domain ""}
    :compress true
    :large_threshold 250
-   :shard 1
-   })
+   :shard 1})
 
+(def core-in (chan))
+(def core-out (chan))
 
-(def core-in (async/chan))
-(def core-out (async/chan))
-
-;(defn log [msg]
-;  (async/>!! core-in msg))
-;(log "test")
-
-(defn handle-error
-  [error]
-  println error)
+(def handle-error println)
 
 (defn ping-pong [out-pipe delay]
-  (let
-    [counter (atom 0)
-     next-id (#(swap! counter inc))]
+  (let [counter (atom 0)
+        next-id #(swap! counter inc)]
     (go-loop []
-      (async/<! (async/timeout delay))
-      (printf "Sending a ping request")
-      (async/>! out-pipe {:id (next-id) :type :ping})
+      (<! (timeout delay))
+      (println "Sending a ping request")
+      (>! out-pipe {:id (next-id) :type :ping})
       (recur))))
 
 ; main thread?
-(async/thread
+(thread
   (loop []
-    (when-let [m (async/<!! core-in)]
+    (when-let [m (<!! core-in)]
       (let [op (:op m)]
         (case op
-          [10] (ping-pong core-out (:interval (:d m))) ))
+          10 (ping-pong core-out (-> m :d :heartbeat_interval))))
       (println (str "OP Code Received: " (:op m)))
       (println m)
       (recur)))
   (println "Log Closed"))
 
 (defn connect-socket [url]
-  (let [
-        shutdown (fn []
-          (async/close! core-in)
-          (async/close! core-out))
+  (let [shutdown (fn []
+                   (close! core-in)
+                   (close! core-out))
         socket (ws/connect url
-          :on-receive
-            (fn [m] (async/put! core-in (parse-string m true)))
-          :on-connect
-            (fn [] (prn "Connected!") )
-          :on-error
-            (fn [_] (shutdown)))]
+                           :on-receive
+                           (fn [m] (put! core-in (json/parse-string m true)))
+                           :on-connect
+                           (fn [_] (prn "Connected!") )
+                           :on-error
+                           (fn [_] (shutdown)))]
     (go-loop []
-      (let [m (async/<! core-out)
-            s (generate-string m)]
+      (let [m (<! core-out)
+            s (json/generate-string m)]
         (ws/send-msg socket s)
         (recur)))
     [core-in core-out]))
@@ -158,32 +145,24 @@
   (let [ws-address (:url (:body (http/get (str API "/gateway") {:as :json})))]
     (connect-socket (str ws-address "/?v=6&encoding=json"))))
 
-(connect-socket "wss://gateway.discord.gg/?v=6&encoding=json")
-;(ws/send-msg socket (generate-string (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA"))
+(comment
+  (connect-socket "wss://gateway.discord.gg/?v=6&encoding=json")
 
-;(def socket
-;  (ws/connect
-;    "wss://gateway.discord.gg"
-;    :on-receive
-;    (fn [message] (printf message))))
+  (ws/send-msg socket (json/generate-string (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
 
-;(def socket
-;  (ws/connect "wss://gateway.discord.gg/?v=6&encoding=json"
-;    :on-receive
-;        (fn [m]
-;          (prn 'received m)
-;          ))
-;  )
+  (def socket
+    (ws/connect
+      "wss://gateway.discord.gg"
+      :on-receive
+      (fn [message] (println message))))
 
-;(ws/send-msg socket "hello")
-(ws/close socket)
+  (def socket
+    (ws/connect
+      "wss://gateway.discord.gg/?v=6&encoding=json"
+      :on-receive
+      (fn [m]
+        (prn 'received m))))
 
-(defn foo
-  "I don't do a whole lot ... yet."
-  [x]
-  (println x "Hello, World!"))
-
-(defn -main
-  "I don't do a whole lot ... yet."
-  [& args]
-  (println "Hello, World!"))
+  (ws/send-msg socket "hello")
+  (ws/close socket)
+  )

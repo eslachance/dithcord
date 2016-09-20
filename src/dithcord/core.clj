@@ -95,9 +95,7 @@
                             :$referrer ""
                             :$referring_domain ""}
                :compress true
-               :large_threshold 250
-               :shard 1}}
-)
+               :large_threshold 250}})
 
 (def core-in (chan))
 (def core-out (chan))
@@ -110,7 +108,7 @@
     (go-loop []
       (<! (timeout delay))
       (println "Sending a ping request")
-      (>! out-pipe {:op 1 :d next-id} )
+      (>! out-pipe {:op 1 :d (next-id)} )
       (recur))))
 
 ; main thread?
@@ -140,9 +138,11 @@
                            :on-connect
                            (fn [_] (prn "Connected!"))
                            :on-error
-                           (fn [_] (prn "Error Occured"))
+                           (fn [e] (prn (str "Error Occured: " e) ))
                            :on-close
-                           (fn [_] (shutdown) ))]
+                           (fn [status, reason] (do
+                                     (prn (str "Connection closed [" status "] : " reason) )
+                                     (shutdown)) ))]
     (go-loop []
       (let [m (<! core-out)
             s (json/generate-string m)]
@@ -157,6 +157,7 @@
 
 (comment
   (connect-socket "wss://gateway.discord.gg/?v=6&encoding=json")
+  (connect-socket "ws://localhost")
 
   (ws/send-msg socket (json/generate-string (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
 

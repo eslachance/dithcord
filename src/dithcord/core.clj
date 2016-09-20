@@ -87,15 +87,17 @@
    5 "SPEAKING"})
 
 (defn identify [token]
-  {:token token
-   :properties {:$os "linux"
-                :$browser "dithcord"
-                :$device "dithcord"
-                :$referrer ""
-                :$referring_domain ""}
-   :compress true
-   :large_threshold 250
-   :shard 1})
+  {:op 2
+   :d {:token (str "Bot " token)
+               :properties {:$os "linux"
+                            :$browser "dithcord"
+                            :$device "dithcord"
+                            :$referrer ""
+                            :$referring_domain ""}
+               :compress true
+               :large_threshold 250
+               :shard 1}}
+)
 
 (def core-in (chan))
 (def core-out (chan))
@@ -108,7 +110,7 @@
     (go-loop []
       (<! (timeout delay))
       (println "Sending a ping request")
-      (>! out-pipe {:id (next-id) :type :ping})
+      (>! out-pipe {:op 1 :d next-id} )
       (recur))))
 
 ; main thread?
@@ -117,7 +119,11 @@
     (when-let [m (<!! core-in)]
       (let [op (:op m)]
         (case op
-          10 (ping-pong core-out (-> m :d :heartbeat_interval))))
+          10 (do
+               (ping-pong core-out (-> m :d :heartbeat_interval))
+               (println "Received OP Code 10, sending Token")
+               (put! core-out (json/generate-string (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA"))))
+          ))
       (println (str "OP Code Received: " (:op m)))
       (println m)
       (recur)))
@@ -125,18 +131,22 @@
 
 (defn connect-socket [url]
   (let [shutdown (fn []
+                   (prn "Closing Sockets")
                    (close! core-in)
                    (close! core-out))
         socket (ws/connect url
                            :on-receive
                            (fn [m] (put! core-in (json/parse-string m true)))
                            :on-connect
-                           (fn [_] (prn "Connected!") )
+                           (fn [_] (prn "Connected!"))
                            :on-error
-                           (fn [_] (shutdown)))]
+                           (fn [_] (prn "Error Occured"))
+                           :on-close
+                           (fn [_] (shutdown) ))]
     (go-loop []
       (let [m (<! core-out)
             s (json/generate-string m)]
+        (println (str "Sending message: " m))
         (ws/send-msg socket s)
         (recur)))
     [core-in core-out]))

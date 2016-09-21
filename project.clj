@@ -7,7 +7,8 @@
                  [org.clojure/core.async "0.2.385"]
                  [cheshire "5.6.3"]
                  [clj-http "2.2.0"]
-                 [stylefruits/gniazdo "1.0.0"]]
+                 [stylefruits/gniazdo "1.0.0"]
+                 [http.async.client "1.2.0"]]
   :main ^:skip-aot dithcord.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

@@ -1,8 +1,9 @@
 (ns dithcord.core
   (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put!]]
-            [clj-http.client :as http]
+    ;[clj-http.client :as http]
             [gniazdo.core :as ws]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [http.async.client :as http]))
 
 (def API "https://discordapp.com/api/v6")
 (def CDN "https://cdn.discordapp.com")
@@ -42,6 +43,8 @@
    :channel-invites     #(str ((:channel endpoints) %1) "/invites")
    :channel-typing      #(str ((:channel endpoints) %1) "/typing")
    :channel-permissions #(str ((:channel endpoints) %1) "/permissions")})
+;((:guild-icon endpoints) "the-guild-id" "the-icon-hash")
+
 
 (def error-messages
   {:NO_TOKEN                  "request to use token, but token was unavailable to the client"
@@ -52,39 +55,6 @@
    :INVALID_RATE_LIMIT_METHOD "unknown rate limiting method"
    :BAD_LOGIN                 "incorrect login details were provided"})
 
-;((:guild-icon endpoints) "the-guild-id" "the-icon-hash")
-
-(def status
-  {0 "READY"
-   1 "CONNECTING"
-   3 "IDLE"
-   4 "NEARLY"})
-
-(def channel-type
-  {0 "text"
-   1 "DM"
-   2 "voice"
-   3 "groupDM"})
-
-(def op-codes
-  {0 "DISPATCH"
-   1 "HEARTBEAT"
-   2 "IDENTIFY"
-   3 "STATUS_UPDATE"
-   4 "VOICE_STATUS_UPDATE"
-   5 "VOICE_GUILD_PING"
-   6 "RESUME"
-   7 "RECONNECT"
-   8 "REQUEST_GUILD_MEMBERS"
-   9 "INVALID SESSION"})
-
-(def voice-op-codes
-  {0 "IDENTIFY"
-   1 "SELECT_PROTOCOL"
-   2 "READY"
-   3 "HEARTBEAT"
-   4 "SESSION_DESCRIPTION"
-   5 "SPEAKING"})
 
 (defn identify [token]
   {:op 2
@@ -100,8 +70,6 @@
 (def core-in (chan))
 (def core-out (chan))
 
-(def handle-error println)
-
 (defn ping-pong [out-pipe delay]
   (let [counter (atom 0)
         next-id #(swap! counter inc)]
@@ -109,78 +77,127 @@
       (<! (timeout delay))
       ;(println "Sending a ping request")
       (>! out-pipe {:op 1 :d (next-id)} )
-      (recur))))
+     (recur))))
 
-; main thread?
-(thread
-  (loop []
-    (when-let [m (<!! core-in)]
-      (let [op (:op m)]
-        (println m)
-        (case op
-          0 (let [action (-> m :t)]
-              (case action
-                "READY" (println (str "Got Ready Packet, session ID: " (-> m :d :session_id)))
-                "MESSAGE_CREATE" (println (str "Message Received from [" (-> m :d :author :username) "]: "  (-> m :d :content)))
-                (println m))
-              )
-          10 (do
-               (ping-pong core-out (-> m :d :heartbeat_interval))
-               (println "Received OP Code 10, sending Token")
-               (put! core-out (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
-          11 (comment "HEARTBEAT_ACK RECEIVED")
-          (prn (str "Received OP code " op))
-          ))
-      (recur)))
-  (println "Log Closed"))
+(defn on-ws-open [ws]
+  (prn "Connected to Discord API Websocket!"))
 
-(defn connect-socket [url]
-  (let [shutdown (fn []
-                   (prn "Closing Sockets")
-                   (close! core-in)
-                   (close! core-out))
-        socket (ws/connect url
-                           :on-receive
-                           (fn [m] (put! core-in (json/parse-string m true)))
-                           :on-connect
-                           (fn [_] (prn "Connected!"))
-                           :on-error
-                           (fn [e] (prn (str "Error Occured: " e) ))
-                           :on-close
-                           (fn [status, reason] (do
-                                     (prn (str "Connection closed [" status "] : " reason) )
-                                     (shutdown)) ))]
+(defn on-ws-close [ws status reason]
+  (do
+    (prn (format "Connection closed [%s] : %s" status reason) )
+    ;(shutdown)
+    ))
+
+(defn on-ws-error [ws error]
+  (prn (str "Error Occured: " error) ))
+
+(defn ws-message [ws m]
+  (let [msg (json/parse-string m true)
+        op (-> msg :op)]
+    (println op)
+    (println msg)
+    (case op
+      0 (let [action (-> msg :t)]
+          ; Presumably, this will call the functions sent by the client!
+          (case action
+            "READY" (str "Got Ready Packet, session ID: " (-> msg :d :session_id))
+            "MESSAGE_CREATE" (println (str "Message Received from [" (-> msg :d :author :username) "]: "  (-> msg :d :content)))
+            (println msg)
+            ))
+      10 (do
+           (ping-pong core-out (-> msg :d :heartbeat_interval))
+           (println "Received OP Code 10, sending Token")
+           (put! core-out (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
+      11 (comment "HEARTBEAT_ACK RECEIVED")
+      (prn (str "Received OP code " op)))))
+
+(defn make-socket [url token]
+  (with-open [client (http/create-client)]
+  (let [ws (http/websocket client
+                           url
+                           ;How do I pass the token to one of these functions, like :on-ws-open?
+                           :open on-ws-open
+                           :close on-ws-close
+                           :error on-ws-error
+                           :text ws-message)]
     (go-loop []
       (let [m (<! core-out)
             s (json/generate-string m)]
         (println (str "Sending message: " m))
-        (ws/send-msg socket s)
+        (http/send ws :text s)
         (recur)))
-    [core-in core-out]))
+    [ws]
+    ))
+)
 
-(defn start-socket []
-  (let [ws-address (:url (:body (http/get (str API "/gateway") {:as :json})))]
-    (connect-socket (str ws-address "/?v=6&encoding=json"))))
+(defn connect [token]
+  "Todo: Get URL from API address..."
+  (let [url "wss://gateway.discord.gg/?v=6&encoding=json"
+        ws (make-socket url token)]
+    ; Not sure if this goes here or it **has** to be in the make-socket function...
+
+    ))
+
+;(connect "test")
+
+  ;;;; OLD WEBSOCKET xD
 
 (comment
+
+  ; main thread?
+  (thread
+    (loop []
+      (when-let [m (<!! core-in)]
+        (let [op (:op m)]
+          (println m)
+          (case op
+            0 (let [action (-> m :t)]
+                (case action
+                  "READY" (println (str "Got Ready Packet, session ID: " (-> m :d :session_id)))
+                  "MESSAGE_CREATE" (println (str "Message Received from [" (-> m :d :author :username) "]: "  (-> m :d :content)))
+                  (println m))
+                )
+            10 (do
+                 (ping-pong core-out (-> m :d :heartbeat_interval))
+                 (println "Received OP Code 10, sending Token")
+                 (put! core-out (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
+            11 (comment "HEARTBEAT_ACK RECEIVED")
+            (prn (str "Received OP code " op))
+            ))
+        (recur)))
+    (println "Log Closed"))
+
+  (defn connect-socket [url]
+    (let [shutdown (fn []
+                     (prn "Closing Sockets")
+                     (close! core-in)
+                     (close! core-out))
+          socket (ws/connect url
+                             :on-receive
+                             (fn [m] (put! core-in (json/parse-string m true)))
+                             :on-connect
+                             (fn [_] (prn "Connected!"))
+                             :on-error
+                             (fn [e] (prn (str "Error Occured: " e) ))
+                             :on-close
+                             (fn [status, reason] (do
+                                                    (prn (str "Connection closed [" status "] : " reason) )
+                                                    (shutdown)) ))]
+      (go-loop []
+        (let [m (<! core-out)
+              s (json/generate-string m)]
+          (println (str "Sending message: " m))
+          (ws/send-msg socket s)
+          (recur)))
+      [core-in core-out]))
+
+  (defn start-socket []
+    (let [ws-address (:url (:body (http/get (str API "/gateway") {:as :json})))]
+      (connect-socket (str ws-address "/?v=6&encoding=json"))))
+
+
   (connect-socket "wss://gateway.discord.gg/?v=6&encoding=json")
   (connect-socket "ws://localhost")
 
-  (ws/send-msg socket (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA"))
 
-  (def socket
-    (ws/connect
-      "wss://gateway.discord.gg"
-      :on-receive
-      (fn [message] (println message))))
-
-  (def socket
-    (ws/connect
-      "wss://gateway.discord.gg/?v=6&encoding=json"
-      :on-receive
-      (fn [m]
-        (prn 'received m))))
-
-  (ws/send-msg socket "hello")
-  (ws/close socket)
   )

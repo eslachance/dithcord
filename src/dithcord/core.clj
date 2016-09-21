@@ -94,7 +94,7 @@
                             :$device "dithcord"
                             :$referrer ""
                             :$referring_domain ""}
-               :compress true
+               :compress false
                :large_threshold 250}})
 
 (def core-in (chan))
@@ -107,7 +107,7 @@
         next-id #(swap! counter inc)]
     (go-loop []
       (<! (timeout delay))
-      (println "Sending a ping request")
+      ;(println "Sending a ping request")
       (>! out-pipe {:op 1 :d (next-id)} )
       (recur))))
 
@@ -116,14 +116,21 @@
   (loop []
     (when-let [m (<!! core-in)]
       (let [op (:op m)]
+        (println m)
         (case op
+          0 (let [action (-> m :t)]
+              (case action
+                "READY" (println (str "Got Ready Packet, session ID: " (-> m :d :session_id)))
+                "MESSAGE_CREATE" (println (str "Message Received from [" (-> m :d :author :username) "]: "  (-> m :d :content)))
+                (println m))
+              )
           10 (do
                (ping-pong core-out (-> m :d :heartbeat_interval))
                (println "Received OP Code 10, sending Token")
-               (put! core-out (json/generate-string (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA"))))
+               (put! core-out (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
+          11 (comment "HEARTBEAT_ACK RECEIVED")
+          (prn (str "Received OP code " op))
           ))
-      (println (str "OP Code Received: " (:op m)))
-      (println m)
       (recur)))
   (println "Log Closed"))
 
@@ -159,7 +166,7 @@
   (connect-socket "wss://gateway.discord.gg/?v=6&encoding=json")
   (connect-socket "ws://localhost")
 
-  (ws/send-msg socket (json/generate-string (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
+  (ws/send-msg socket (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA"))
 
   (def socket
     (ws/connect

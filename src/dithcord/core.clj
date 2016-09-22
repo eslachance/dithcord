@@ -100,14 +100,15 @@
       0 (let [action (-> msg :t)]
           ; Presumably, this will call the functions sent by the client!
           (case action
-            "READY" (str "Got Ready Packet, session ID: " (-> msg :d :session_id))
+            "READY" (do
+                      (swap! session assoc :session-id (-> msg :d :session_id))
+                      (str "Got Ready Packet, session ID: " (get @session :session-id)))
             "MESSAGE_CREATE" (println (str "Message Received from [" (-> msg :d :author :username) "]: "  (-> msg :d :content)))
-            (println msg)
-            ))
+            (println msg)))
       10 (do
            (ping-pong core-out (-> msg :d :heartbeat_interval) session)
            (println "Received OP Code 10, sending Token")
-           (put! core-out (identify (get session :token))))
+           (put! core-out (identify (get @session :token))))
       11 (comment "HEARTBEAT_ACK RECEIVED")
       (prn (str "Received OP code " op)))))
 
@@ -131,70 +132,10 @@
 (defn connect [token handlers]
   "Todo: Get URL from API address..."
   (let [url "wss://gateway.discord.gg/?v=6&encoding=json"
-        session {:token token :handlers handlers}
-        ws (make-socket url session)        ]
-    (assoc session :socket ws)))
+        session (atom {:token token :handlers handlers})
+        ws (make-socket url session)]
+    (swap! session assoc :socket ws)
+    [session]
+    ))
 
-;(connect "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")
-
-  ;;;; OLD WEBSOCKET xD
-
-(comment
-
-  ; main thread?
-  (thread
-    (loop []
-      (when-let [m (<!! core-in)]
-        (let [op (:op m)]
-          (println m)
-          (case op
-            0 (let [action (-> m :t)]
-                (case action
-                  "READY" (println (str "Got Ready Packet, session ID: " (-> m :d :session_id)))
-                  "MESSAGE_CREATE" (println (str "Message Received from [" (-> m :d :author :username) "]: "  (-> m :d :content)))
-                  (println m))
-                )
-            10 (do
-                 (ping-pong core-out (-> m :d :heartbeat_interval))
-                 (println "Received OP Code 10, sending Token")
-                 (put! core-out (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
-            11 (comment "HEARTBEAT_ACK RECEIVED")
-            (prn (str "Received OP code " op))
-            ))
-        (recur)))
-    (println "Log Closed"))
-
-  (defn connect-socket [url]
-    (let [shutdown (fn []
-                     (prn "Closing Sockets")
-                     (close! core-in)
-                     (close! core-out))
-          socket (ws/connect url
-                             :on-receive
-                             (fn [m] (put! core-in (json/parse-string m true)))
-                             :on-connect
-                             (fn [_] (prn "Connected!"))
-                             :on-error
-                             (fn [e] (prn (str "Error Occured: " e) ))
-                             :on-close
-                             (fn [status, reason] (do
-                                                    (prn (str "Connection closed [" status "] : " reason) )
-                                                    (shutdown)) ))]
-      (go-loop []
-        (let [m (<! core-out)
-              s (json/generate-string m)]
-          (println (str "Sending message: " m))
-          (ws/send-msg socket s)
-          (recur)))
-      [core-in core-out]))
-
-  (defn start-socket []
-    (let [ws-address (:url (:body (http/get (str API "/gateway") {:as :json})))]
-      (connect-socket (str ws-address "/?v=6&encoding=json"))))
-
-
-  (connect-socket "wss://gateway.discord.gg/?v=6&encoding=json")
-  (connect-socket "ws://localhost")
-
-
-  )
+;(connect "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA", {})

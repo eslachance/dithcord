@@ -70,7 +70,7 @@
 (def core-in (chan))
 (def core-out (chan))
 
-(defn ping-pong [out-pipe delay]
+(defn ping-pong [out-pipe delay session]
   (let [counter (atom 0)
         next-id #(swap! counter inc)]
     (go-loop []
@@ -79,19 +79,19 @@
       (>! out-pipe {:op 1 :d (next-id)} )
      (recur))))
 
-(defn on-ws-open [ws]
+(defn on-ws-open [ws session]
   (prn "Connected to Discord API Websocket!"))
 
-(defn on-ws-close [ws status reason]
+(defn on-ws-close [ws status reason session]
   (do
     (prn (format "Connection closed [%s] : %s" status reason) )
     ;(shutdown)
     ))
 
-(defn on-ws-error [ws error]
+(defn on-ws-error [ws error session]
   (prn (str "Error Occured: " error) ))
 
-(defn ws-message [ws m]
+(defn ws-message [ws m session]
   (let [msg (json/parse-string m true)
         op (-> msg :op)]
     (println op)
@@ -105,21 +105,20 @@
             (println msg)
             ))
       10 (do
-           (ping-pong core-out (-> msg :d :heartbeat_interval))
+           (ping-pong core-out (-> msg :d :heartbeat_interval) session)
            (println "Received OP Code 10, sending Token")
-           (put! core-out (identify "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")))
+           (put! core-out (identify (get session :token))))
       11 (comment "HEARTBEAT_ACK RECEIVED")
       (prn (str "Received OP code " op)))))
 
-(defn make-socket [url token]
-  (with-open [client (http/create-client)]
-  (let [ws (http/websocket client
+(defn make-socket [url session]
+  (let [client (http/create-client)
+        ws (http/websocket client
                            url
-                           ;How do I pass the token to one of these functions, like :on-ws-open?
-                           :open on-ws-open
-                           :close on-ws-close
-                           :error on-ws-error
-                           :text ws-message)]
+                           :open #(on-ws-open % session)
+                           :close #(on-ws-close %1 %2 %3 session)
+                           :error #(on-ws-error %1 %2 session)
+                           :text #(ws-message %1 %2 session))]
     (go-loop []
       (let [m (<! core-out)
             s (json/generate-string m)]
@@ -128,17 +127,15 @@
         (recur)))
     [ws]
     ))
-)
 
-(defn connect [token]
+(defn connect [token handlers]
   "Todo: Get URL from API address..."
   (let [url "wss://gateway.discord.gg/?v=6&encoding=json"
-        ws (make-socket url token)]
-    ; Not sure if this goes here or it **has** to be in the make-socket function...
+        session {:token token :handlers handlers}
+        ws (make-socket url session)        ]
+    (assoc session :socket ws)))
 
-    ))
-
-;(connect "test")
+;(connect "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA")
 
   ;;;; OLD WEBSOCKET xD
 

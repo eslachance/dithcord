@@ -1,7 +1,5 @@
 (ns dithcord.core
   (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put!]]
-    ;[clj-http.client :as http]
-            [gniazdo.core :as ws]
             [cheshire.core :as json]
             [http.async.client :as http]))
 
@@ -67,8 +65,21 @@
                :compress false
                :large_threshold 250}})
 
-(def core-in (chan))
 (def core-out (chan))
+
+(comment
+  (if (not kill-chan)
+    (let [kill-chan (chan)]
+      (go-loop []
+                     (let [[event ch] (alts! [input-chan kill-chan])]
+                       (if (= ch kill-chan)
+                         (close! kill-chan)
+                         (do
+                           (process-event! event events)
+                           (recur)))))
+      (assoc this :kill-chan kill-chan))
+    this)
+  )
 
 (defn ping-pong [out-pipe delay session]
   (let [counter (atom 0)
@@ -84,7 +95,7 @@
 
 (defn on-ws-close [ws status reason session]
   (do
-    (prn (format "Connection closed [%s] : %s" status reason) )
+    (prn (format "Connection closed [%s] : %s" status reason))
     ;(shutdown)
     ))
 
@@ -126,8 +137,7 @@
         (println (str "Sending message: " m))
         (http/send ws :text s)
         (recur)))
-    [ws]
-    ))
+    [ws]))
 
 (defn connect [token handlers]
   "Todo: Get URL from API address..."
@@ -137,5 +147,3 @@
     (swap! session assoc :socket ws)
     [session]
     ))
-
-;(connect "MjA5MDE1MzEwNTcxNzk4NTM0.CsEAEQ.1EWIOuraD_ZX44SEn2D6FHMlEfA", {})

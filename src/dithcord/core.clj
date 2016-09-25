@@ -35,7 +35,7 @@
    ;WTF is this endpoint just for nickname, guys?
 
    :channels            (str API "/channels")
-   :channel             #(str ((:channels endpoints) %1))
+   :channel             #(str ((:channels endpoints) "/" %1))
    :channel-messages    #(str ((:channel endpoints) %1) "/messages")
    :channel-message     #(str ((:channel-messages endpoints) %1) "/" %2)
    :channel-invites     #(str ((:channel endpoints) %1) "/invites")
@@ -114,7 +114,8 @@
             "READY" (do
                       (swap! session assoc :session-id (-> msg :d :session_id))
                       (str "Got Ready Packet, session ID: " (get @session :session-id)))
-            "MESSAGE_CREATE" (println (str "Message Received from [" (-> msg :d :author :username) "]: "  (-> msg :d :content)))
+            "MESSAGE_CREATE" (let [func (get-in @session [:handlers :MESSAGE_CREATE])]
+                               (func (-> msg :d) session))
             (println msg)))
       10 (do
            (ping-pong core-out (-> msg :d :heartbeat_interval) session)
@@ -122,6 +123,19 @@
            (put! core-out (identify (get @session :token))))
       11 (comment "HEARTBEAT_ACK RECEIVED")
       (prn (str "Received OP code " op)))))
+
+(defn send-message [session msg channel]
+  (with-open [client (http/create-client)]
+    (let [resp (http/POST
+                 client (str "http://discordapp.com/api/v6/channels/" channel "/message")
+                 :body {:content msg}
+                 :header {:Authorization (str "Bot " (get @session :token))})]
+      (get-in @resp [@:body])
+      (-> resp
+                   http/await
+                   http/string))
+      )
+  )
 
 (defn make-socket [url session]
   (let [client (http/create-client)

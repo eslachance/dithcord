@@ -1,8 +1,7 @@
 (ns dithcord.core
   (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put!]]
             [cheshire.core :as json]
-            [http.async.client :as http]
-            [org.httpkit.client :as http2]))
+            [http.async.client :as http]))
 
 (def API "https://discordapp.com/api/v6")
 (def CDN "https://cdn.discordapp.com")
@@ -126,12 +125,14 @@
       (prn (str "Received OP code " op)))))
 
 (defn send-message [session msg channel]
-  (let [response (http2/post
-                   :url (str "http://discordapp.com/api/v6/channels/" channel "/message")
-                   :headers {"Authorization" (str "Bot " (get @session :token))}
-                   :body (json/encode {:content msg}))]
-    (prn response)
-    [response])
+  (prn (str "Received send-message command on " channel " : " msg))
+  (let [client (http/create-client)
+        resp (http/POST
+               client
+               (str "http://discordapp.com/api/v6/channels/" channel "/message")
+               :body {:content msg}
+               :header {:Authorization (str "Bot " (get @session :token))})]
+    [resp])
 )
 
 (defn make-socket [url session]

@@ -139,10 +139,10 @@
         resp (http/POST
                client
                (str "http://discordapp.com/api/v6/channels/" channel "/messages")
-               :body {:content msg :tts false}
-               :header {"Authorization" (str "Bot " (get @session :token))
+               :body {:content msg}
+               :headers {"Authorization" (str "Bot " (get @session :token))
                         "Content-type" "application/x-www-form-urlencoded"
-                        "Content-length" "0"})]
+                        "Content-length" 13})]
     resp)
 )
 

@@ -138,7 +138,7 @@
   (let [client (http/create-client :follow-redirects true)
         resp (http/POST
                client
-               (str "http://discordapp.com/api/v6/channels/" channel "/messages")
+               (str "https://discordapp.com/api/v6/channels/" channel "/messages")
                :body {:content msg}
                :headers {"Authorization" (str "Bot " (get @session :token))
                         "Content-type" "application/x-www-form-urlencoded"

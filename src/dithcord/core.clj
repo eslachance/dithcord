@@ -105,38 +105,49 @@
 (defn ws-message [ws m session]
   (let [msg (json/parse-string m true)
         op (-> msg :op)]
-    (println op)
-    (println msg)
+    ;(println op)
+    ;(println msg)
     (case op
       0 (let [action (-> msg :t)]
           ; Presumably, this will call the functions sent by the client!
           (case action
             "READY" (do
                       (swap! session assoc :session-id (-> msg :d :session_id))
-                      (str "Got Ready Packet, session ID: " (get @session :session-id)))
+                      (str "Got Ready Packet, session ID: " (get @session :session-id))
+                      (let [func (get-in @session [:handlers :READY])]
+                        (func session)))
             "MESSAGE_CREATE" (let [func (get-in @session [:handlers :MESSAGE_CREATE])]
-                               (func (-> msg :d) session))
-            (println msg)))
+                               (func session (-> msg :d)))
+            "GUILD_CREATE" (comment "Not Yet Implemented!")
+            "TYPING_START" (let [func (get-in @session [:handlers :TYPING_START])]
+                             ;(prn (-> msg :d))
+                             (func session (-> msg :d :user_id) (-> msg :d :channel_id))
+                             )
+            (println msg)
+            ))
       10 (do
            (ping-pong core-out (-> msg :d :heartbeat_interval) session)
-           (println "Received OP Code 10, sending Token")
+           ;(println "Received OP Code 10, sending Token")
            (put! core-out (identify (get @session :token))))
       11 (comment "HEARTBEAT_ACK RECEIVED")
-      (prn (str "Received OP code " op)))))
+      ;(prn (str "Received OP code " op))
+      )))
 
 (defn send-message [session msg channel]
   (prn (str "Received send-message command on " channel " : " msg))
-  (let [client (http/create-client)
+  (let [client (http/create-client :follow-redirects true)
         resp (http/POST
                client
-               (str "http://discordapp.com/api/v6/channels/" channel "/message")
-               :body {:content msg}
-               :header {:Authorization (str "Bot " (get @session :token))})]
-    [resp])
+               (str "http://discordapp.com/api/v6/channels/" channel "/messages")
+               :body {:content msg :tts false}
+               :header {"Authorization" (str "Bot " (get @session :token))
+                        "Content-type" "application/x-www-form-urlencoded"
+                        "Content-length" "0"})]
+    resp)
 )
 
 (defn make-socket [url session]
-  (let [client (http/create-client)
+  (let [client (http/create-client :follow-redirects true)
         ws (http/websocket client
                            url
                            :open #(on-ws-open % session)
@@ -146,10 +157,10 @@
     (go-loop []
       (let [m (<! core-out)
             s (json/generate-string m)]
-        (println (str "Sending message: " m))
+        ;(println (str "Sending message: " m))
         (http/send ws :text s)
         (recur)))
-    [ws]))
+    ws))
 
 (defn connect [token handlers]
   "Todo: Get URL from API address..."
@@ -157,5 +168,5 @@
         session (atom {:token token :handlers handlers})
         ws (make-socket url session)]
     (swap! session assoc :socket ws)
-    [session]
+    session
     ))

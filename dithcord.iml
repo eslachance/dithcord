@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<module cursive.leiningen.project.LeiningenProjectsManager.displayName="dithcord:0.2.0-SNAPSHOT" cursive.leiningen.project.LeiningenProjectsManager.isLeinModule="true" type="JAVA_MODULE" version="4">
+<module cursive.leiningen.project.LeiningenProjectsManager.displayName="dithcord:0.0.8" cursive.leiningen.project.LeiningenProjectsManager.isLeinModule="true" type="JAVA_MODULE" version="4">
   <component name="NewModuleRootManager" inherit-compiler-output="false">
     <output url="file://$MODULE_DIR$/target/base+system+user+dev/classes" />
     <output-test url="file://$MODULE_DIR$/target/base+system+user+dev/classes" />
@@ -22,6 +22,7 @@
     <orderEntry type="library" name="Leiningen: com.fasterxml.jackson.dataformat/jackson-dataformat-smile:2.7.5" level="project" />
     <orderEntry type="library" name="Leiningen: com.ning/async-http-client:1.9.39" level="project" />
     <orderEntry type="library" name="Leiningen: compliment:0.2.0" level="project" />
+    <orderEntry type="library" name="Leiningen: http-kit:2.1.18" level="project" />
     <orderEntry type="library" name="Leiningen: http.async.client:1.2.0" level="project" />
     <orderEntry type="library" name="Leiningen: io.netty/netty:3.10.5.Final" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/clojure:1.8.0" level="project" />

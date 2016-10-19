@@ -14,9 +14,32 @@ Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, 
  [dithcord "0.2.1"]
 ```
 
-## Usage
+## Example
 
-> To be done
+> Ping/Pong example (pong doesn't work yet, yay)
+
+```clj
+(ns dtbot.core
+  (:require [dithcord.core :as dithcord]))
+
+(defn handle-message [message session]
+  (if (= (get message :content) "ping")
+    (do
+      (prn "Ping Command Called")
+      (let [response (dithcord/send-message session "pong!" (get message :channel_id))]
+        (prn (response :done))
+        (prn (response :error)))
+      )
+  ))
+
+(defn on-ready [session]
+  (prn "Ready to Serve!"))
+
+(def handlers {:MESSAGE_CREATE handle-message
+               :READY on-ready})
+
+(dithcord/connect "your-bot-token" handlers)
+```
 
 ## Documentation
 

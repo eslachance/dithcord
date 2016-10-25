@@ -62,7 +62,7 @@
                             :$device "dithcord"
                             :$referrer ""
                             :$referring_domain ""}
-               :compress false
+               :compress true
                :large_threshold 250}})
 
 (def core-out (chan))

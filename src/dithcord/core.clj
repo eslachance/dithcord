@@ -1,58 +1,7 @@
 (ns dithcord.core
-  (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put!]]
+  (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put! alt!]]
             [cheshire.core :as json]
             [http.async.client :as http]))
-
-(def API "https://discordapp.com/api/v6")
-(def CDN "https://cdn.discordapp.com")
-
-(def endpoints
-  {:login               (str API "/auth/login")
-   :logout              (str API "/auth/logout")
-   :gateway             (str API "/gateway")
-   :invite              (str API "/invite" :id)
-   :CDN                 (str API "/auth/login")
-
-   :user                #(str API "/users/" %1)
-   :user-channels       #(str ((:user endpoints) %1) "/channels")
-   :avatar              #(str ((:user endpoints) %1) "/avatars/" %2 ".jpg")
-   :user-profile        (str API "/users/@me")
-   :user-guilds         #(str ((:user-profile endpoints) "/guilds/" %1))
-
-   :guilds              (str API "/guilds")
-   :guild               #(str (:guilds endpoints) "/" %)
-   :guild-icon          #(str ((:guild endpoints) %1) "/icons/" %2 ".jpg")
-   :guild-prune         #(str ((:guild endpoints) %1) "/prune")
-   :guild-embed         #(str ((:guild endpoints) %1) "/embed")
-   :guild-invites       #(str ((:guild endpoints) %1) "/invites")
-   :guild-roles         #(str ((:guilds endpoints) %1) "/roles")
-   :guild-role          #(str ((:guilds-roles endpoints) %1) "/" %2)
-   :guild-bans          #(str ((:guild endpoints) %1) "/bans")
-   :guild-integrations  #(str ((:guild endpoints) %1) "/integrations")
-   :guild-members       #(str ((:guild endpoints) %1) "/members")
-   :guild-member        #(str ((:guilds-members endpoints) %1) "/" %2)
-   :guild-member-nick   #(str ((:guild-member endpoints) %1 "@me") "/nick")
-   ;WTF is this endpoint just for nickname, guys?
-
-   :channels            (str API "/channels")
-   :channel             #(str ((:channels endpoints) "/" %1))
-   :channel-messages    #(str ((:channel endpoints) %1) "/messages")
-   :channel-message     #(str ((:channel-messages endpoints) %1) "/" %2)
-   :channel-invites     #(str ((:channel endpoints) %1) "/invites")
-   :channel-typing      #(str ((:channel endpoints) %1) "/typing")
-   :channel-permissions #(str ((:channel endpoints) %1) "/permissions")})
-;((:guild-icon endpoints) "the-guild-id" "the-icon-hash")
-
-
-(def error-messages
-  {:NO_TOKEN                  "request to use token, but token was unavailable to the client"
-   :NO_BOT_ACCOUNT            "you should ideally be using a bot account!"
-   :BAD_WS_MESSAGE            "a bad message was received from the websocket - bad compression or not json"
-   :TOOK_TOO_LONG             "something took too long to do"
-   :NOT_A_PERMISSION          "that is not a valid permission string or number"
-   :INVALID_RATE_LIMIT_METHOD "unknown rate limiting method"
-   :BAD_LOGIN                 "incorrect login details were provided"})
-
 
 (defn identify [token]
   {:op 2
@@ -62,33 +11,34 @@
                             :$device "dithcord"
                             :$referrer ""
                             :$referring_domain ""}
-               :compress false
+               :compress true
                :large_threshold 250}})
 
-(def core-out (chan))
-
-(comment
-  (if (not kill-chan)
-    (let [kill-chan (chan)]
-      (go-loop []
-                     (let [[event ch] (alts! [input-chan kill-chan])]
-                       (if (= ch kill-chan)
-                         (close! kill-chan)
-                         (do
-                           (process-event! event events)
-                           (recur)))))
-      (assoc this :kill-chan kill-chan))
-    this)
-  )
-
-(defn ping-pong [out-pipe delay session]
-  (let [counter (atom 0)
-        next-id #(swap! counter inc)]
+(defn set-interval
+  [f time-in-ms]
+  (let [stop (chan)]
     (go-loop []
-      (<! (timeout delay))
-      ;(println "Sending a ping request")
-      (>! out-pipe {:op 1 :d (next-id)} )
-     (recur))))
+      (alt!
+        (timeout time-in-ms)
+        (do (<! (thread (f)))
+            (recur))
+        stop :stop))
+    stop))
+
+(defn shutdown [session]
+  (do
+    (if (some? (:ws @session))
+      (http/close (:ws @session)))
+    (if (some? (:ping-timer @session))
+      (close! (get @session :ping-timer)))
+    (swap! session nil)))
+
+(defn ping-pong [delay session]
+  (let [counter (swap! session assoc :session-id (atom 0))
+        next-id #(swap! @counter inc)
+        out-chan (get @session :chan-out)
+        timer (set-interval #((>! out-chan {:op 1 :d (next-id)} )) delay)]
+    (swap! session assoc :ping-timer timer)))
 
 (defn on-ws-open [ws session]
   (prn "Connected to Discord API Websocket!"))
@@ -96,42 +46,15 @@
 (defn on-ws-close [ws status reason session]
   (do
     (prn (format "Connection closed [%s] : %s" status reason))
-    ;(shutdown)
+    (shutdown session)
     ))
 
 (defn on-ws-error [ws error session]
-  (prn (str "Error Occured: " error) ))
-
-(defn ws-message [ws m session]
-  (let [msg (json/parse-string m true)
-        op (-> msg :op)]
-    ;(println op)
-    ;(println msg)
-    (case op
-      0 (let [action (-> msg :t)]
-          ; Presumably, this will call the functions sent by the client!
-          (case action
-            "READY" (do
-                      (swap! session assoc :session-id (-> msg :d :session_id))
-                      (str "Got Ready Packet, session ID: " (get @session :session-id))
-                      (let [func (get-in @session [:handlers :READY])]
-                        (func session)))
-            "MESSAGE_CREATE" (let [func (get-in @session [:handlers :MESSAGE_CREATE])]
-                               (func session (-> msg :d)))
-            "GUILD_CREATE" (comment "Not Yet Implemented!")
-            "TYPING_START" (let [func (get-in @session [:handlers :TYPING_START])]
-                             ;(prn (-> msg :d))
-                             (func session (-> msg :d :user_id) (-> msg :d :channel_id))
-                             )
-            (println msg)
-            ))
-      10 (do
-           (ping-pong core-out (-> msg :d :heartbeat_interval) session)
-           ;(println "Received OP Code 10, sending Token")
-           (put! core-out (identify (get @session :token))))
-      11 (comment "HEARTBEAT_ACK RECEIVED")
-      ;(prn (str "Received OP code " op))
-      )))
+  (do
+    (prn (str "Error Occured: " error))
+    (shutdown session)
+    )
+  )
 
 (defn send-message [session msg channel]
   (prn (str "Received send-message command on " channel " : " msg))
@@ -146,27 +69,86 @@
     resp)
 )
 
-(defn make-socket [url session]
-  (let [client (http/create-client :follow-redirects true)
+(defn handle-hello [session msg]
+  (when (= 10 (:op msg))
+    (let [out-chan (get @session :chan-out)
+          identify-packet (identify (get @session :token))]
+      (prn "Executing Handle Hello")
+      (put! out-chan identify-packet)
+      (ping-pong (-> msg :d :heartbeat_interval) session)
+      )))
+
+(defn handle-ready [session msg]
+  (when (and (= 0 (:op msg)) (= "READY" (:t msg)))
+    (prn (str "Handle Ready on " (:op msg)))
+    (swap! session assoc :session-id (-> msg :d :session_id))))
+
+(defn handle-dispatch [session msg]
+  ; This handler dispatches events to the client's handler functions.
+  (when (= 0 (:op msg))
+    (prn (str "Handle Dispatch on " (:op msg)))
+    (let [func (get-in @session [:handlers (:t msg)])]
+      (func session))
+    ))
+
+(def internal-handlers
+  [handle-ready
+   handle-hello
+   handle-dispatch])
+
+(defn on-message [ws msg session]
+  (prn msg)
+    (prn (str "[OP][" (:op msg) "][EVENT][" (:t msg) "]"))
+    (doall (map #(apply % [session msg]) (:internal-handlers @session))))
+
+(defn connect-raw [state]
+  (let [session (atom state)
+        client (http/create-client :follow-redirects true)
         ws (http/websocket client
-                           url
+                           "wss://gateway.discord.gg/?v=6&encoding=json"
                            :open #(on-ws-open % session)
                            :close #(on-ws-close %1 %2 %3 session)
                            :error #(on-ws-error %1 %2 session)
-                           :text #(ws-message %1 %2 session))]
+                           :text #(on-message %1 (json/parse-string %2 true) session))
+        out-channel (chan)]
+    (swap! session assoc :socket ws)
+    (swap! session assoc :chan-out out-channel)
     (go-loop []
-      (let [m (<! core-out)
+      (let [m (<! out-channel)
             s (json/generate-string m)]
-        ;(println (str "Sending message: " m))
         (http/send ws :text s)
         (recur)))
-    ws))
-
-(defn connect [token handlers]
-  "Todo: Get URL from API address..."
-  (let [url "wss://gateway.discord.gg/?v=6&encoding=json"
-        session (atom {:token token :handlers handlers})
-        ws (make-socket url session)]
-    (swap! session assoc :socket ws)
     session
     ))
+
+(defn connect [state]
+  (connect-raw
+    (merge state
+           {:internal-handlers internal-handlers})))
+
+
+;;; THIS IS THE CLIENT EXAMPLE CODE
+(comment
+
+  (def config (edn/read-string (slurp "config.edn")))
+
+  (defn handle-message [session message]
+    (if (= (get message :content) "ping")
+      (dithcord/send-message session "pong!" (get message :channel_id))
+      )
+    )
+
+  (defn on-ready [session]
+    (prn "Dithcord Tetht is ready to serve!" \n session))
+
+  (def handlers {:MESSAGE_CREATE [handle-message]
+                 :READY          [on-ready]})
+
+  (defn -main
+    []
+    (dithcord/connect
+      {:token (config :token)
+       :handlers handlers
+       }))
+
+  )

@@ -7,6 +7,6 @@
                  [org.clojure/core.async "0.2.385"]
                  [cheshire "5.6.3"]
                  [http.async.client "1.2.0"]
-                 [http-kit "2.1.18"]]
+                 [org.slf4j/slf4j-simple "1.7.12"]]
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

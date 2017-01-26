@@ -22,7 +22,6 @@
     <orderEntry type="library" name="Leiningen: com.fasterxml.jackson.dataformat/jackson-dataformat-smile:2.7.5" level="project" />
     <orderEntry type="library" name="Leiningen: com.ning/async-http-client:1.9.39" level="project" />
     <orderEntry type="library" name="Leiningen: compliment:0.2.0" level="project" />
-    <orderEntry type="library" name="Leiningen: http-kit:2.1.18" level="project" />
     <orderEntry type="library" name="Leiningen: http.async.client:1.2.0" level="project" />
     <orderEntry type="library" name="Leiningen: io.netty/netty:3.10.5.Final" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/clojure:1.8.0" level="project" />
@@ -40,6 +39,7 @@
     <orderEntry type="library" name="Leiningen: org.clojure/tools.trace:0.7.8" level="project" />
     <orderEntry type="library" name="Leiningen: org.ow2.asm/asm-all:4.2" level="project" />
     <orderEntry type="library" name="Leiningen: org.slf4j/slf4j-api:1.7.12" level="project" />
+    <orderEntry type="library" name="Leiningen: org.slf4j/slf4j-simple:1.7.12" level="project" />
     <orderEntry type="library" name="Leiningen: org.tcrawley/dynapath:0.2.3" level="project" />
     <orderEntry type="library" name="Leiningen: tigris:0.1.1" level="project" />
   </component>

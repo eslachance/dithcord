@@ -30,15 +30,16 @@
     (if (some? (:ws @session))
       (http/close (:ws @session)))
     (if (some? (:ping-timer @session))
-      (close! (get @session :ping-timer)))
+      (close! (:ping-timer @session)))
     (swap! session nil)))
 
 (defn ping-pong [delay session]
-  (let [counter (swap! session assoc :session-id (atom 0))
-        next-id #(swap! @counter inc)
-        out-chan (get @session :chan-out)
-        timer (set-interval #((>! out-chan {:op 1 :d (next-id)} )) delay)]
-    (swap! session assoc :ping-timer timer)))
+  (do (prn "Starting PING")
+      (let [next-id #(swap! (get @session :ping-counter) inc)
+            out-chan (get @session :chan-out)
+            timer (set-interval #(put! out-chan {:op 1 :d (next-id)}) delay)]
+        (swap! session assoc :ping-timer timer)))
+  )
 
 (defn on-ws-open [ws session]
   (prn "Connected to Discord API Websocket!"))
@@ -55,6 +56,8 @@
     (shutdown session)
     )
   )
+
+(defn api-request [session, method, url, data, file])
 
 (defn send-message [session msg channel]
   (prn (str "Received send-message command on " channel " : " msg))
@@ -88,13 +91,17 @@
   (when (= 0 (:op msg))
     (prn (str "Handle Dispatch on " (:op msg)))
     (let [func (get-in @session [:handlers (:t msg)])]
-      (func session))
+      (do (prn func)
+          (if (fn? func)
+            (func session)))
+        )
     ))
 
 (def internal-handlers
   [handle-ready
    handle-hello
-   handle-dispatch])
+   handle-dispatch
+   ])
 
 (defn on-message [ws msg session]
   (prn msg)
@@ -113,9 +120,11 @@
         out-channel (chan)]
     (swap! session assoc :socket ws)
     (swap! session assoc :chan-out out-channel)
+    (swap! session assoc :ping-counter (atom 0))
     (go-loop []
       (let [m (<! out-channel)
             s (json/generate-string m)]
+        (prn "Outputting Message to Socket: " s)
         (http/send ws :text s)
         (recur)))
     session
@@ -125,30 +134,3 @@
   (connect-raw
     (merge state
            {:internal-handlers internal-handlers})))
-
-
-;;; THIS IS THE CLIENT EXAMPLE CODE
-(comment
-
-  (def config (edn/read-string (slurp "config.edn")))
-
-  (defn handle-message [session message]
-    (if (= (get message :content) "ping")
-      (dithcord/send-message session "pong!" (get message :channel_id))
-      )
-    )
-
-  (defn on-ready [session]
-    (prn "Dithcord Tetht is ready to serve!" \n session))
-
-  (def handlers {:MESSAGE_CREATE [handle-message]
-                 :READY          [on-ready]})
-
-  (defn -main
-    []
-    (dithcord/connect
-      {:token (config :token)
-       :handlers handlers
-       }))
-
-  )

@@ -89,13 +89,12 @@
 (defn handle-dispatch [session msg]
   ; This handler dispatches events to the client's handler functions.
   (when (= 0 (:op msg))
-    (prn (str "Handle Dispatch on " (:op msg)))
-    (let [func (get-in @session [:handlers (:t msg)])]
-      (do (prn func)
-          (if (fn? func)
-            (func session)))
-        )
-    ))
+    ;(prn (str "Handle Dispatch on " (:op msg) " " (:t msg)))
+    (let [handler (get-in @session [:handlers (keyword (:t msg))])
+          first-handler (first handler)]
+      (if-not (nil? first-handler)
+        (first-handler session (msg :d))
+        ))))
 
 (def internal-handlers
   [handle-ready
@@ -104,8 +103,8 @@
    ])
 
 (defn on-message [ws msg session]
-  (prn msg)
-    (prn (str "[OP][" (:op msg) "][EVENT][" (:t msg) "]"))
+  ;(prn msg)
+  ;(prn (str "[OP][" (:op msg) "][EVENT][" (:t msg) "]"))
     (doall (map #(apply % [session msg]) (:internal-handlers @session))))
 
 (defn connect-raw [state]

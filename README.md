@@ -2,7 +2,7 @@
 
 Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, it's fairly useless right now and is in heavy development. In other words, don't download it.
 
-> If you're wondering about the name, it's because Dithcord is built on Clojure, which is a *lisp*. Yes, I think it's a clever pun. No, I don't think it's ableist to joke about lisps. No more than the fact that the word itself is pronounced `lithp` if you have it. Thanks for the name, Jagrosh!
+> If you're wondering about the name, it's because Dithcord is built on Clojure, which is a *lisp*. Yes, I think it's a clever pun. No, I don't think it's ableist to joke about lisps. No more than the fact that the word itself is pronounced `lithp` if you have it.
 
 ## Installation
 
@@ -20,34 +20,30 @@ Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, 
 
 ```clj
 (ns dtbot.core
-  (:require [dithcord.core :as dithcord]))
+  (:require [dithcord.core :as dithcord]
+            [clojure.edn :as edn]))
 
-(defn handle-message [message session]
-  (if (= (get message :content) "ping")
-    (do
-      (prn "Ping Command Called")
-      (let [response (dithcord/send-message session "pong!" (get message :channel_id))]
-        (prn (response :done))
-        (prn (response :error)))
-      )
-  ))
+(defn handle-message [session message]
+  (if (= (message :content) "!ping")
+    (dithcord/send-message session "pong!" (message :channel_id))))
 
 (defn on-ready [session]
-  (prn "Ready to Serve!"))
+  (prn "Dithcord Tetht is ready to serve!"))
 
-(def handlers {:MESSAGE_CREATE handle-message
-               :READY on-ready})
+(def handlers {:MESSAGE_CREATE [handle-message]
+               :READY          [on-ready]})
 
-(dithcord/connect "your-bot-token" handlers)
+(def session (dithcord/connect
+                 {:token "YOUR TOKEN HERE"
+                  :handlers handlers
+                  }))
 ```
 
 ## Documentation
 
 > To be done
 
-## License
+## Credits
 
-Copyright © 2016 Évelyne Lachance
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+- @Jagrosh#4824 : For coming up with the name "Dithcord".
+- My trusted allies on Discord for pushing me to succeed

@@ -1,4 +1,4 @@
-# Dithcord
+<div align="center"><p>&nbsp;</p><img src="http://i.imgur.com/rt1yACk.png"><p>&nbsp;</p></div>
 
 Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, it's fairly useless right now and is in heavy development. In other words, don't download it.
 

@@ -13,8 +13,11 @@
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="library" name="Leiningen: aleph:0.4.1" level="project" />
+    <orderEntry type="library" name="Leiningen: byte-streams:0.2.2" level="project" />
     <orderEntry type="library" name="Leiningen: cheshire:5.6.3" level="project" />
     <orderEntry type="library" name="Leiningen: cider/cider-nrepl:0.8.1" level="project" />
+    <orderEntry type="library" name="Leiningen: clj-tuple:0.2.2" level="project" />
     <orderEntry type="library" name="Leiningen: cljs-tooling:0.1.3" level="project" />
     <orderEntry type="library" name="Leiningen: clojure-complete:0.2.4" level="project" />
     <orderEntry type="library" name="Leiningen: com.fasterxml.jackson.core/jackson-core:2.7.5" level="project" />
@@ -22,8 +25,12 @@
     <orderEntry type="library" name="Leiningen: com.fasterxml.jackson.dataformat/jackson-dataformat-smile:2.7.5" level="project" />
     <orderEntry type="library" name="Leiningen: com.ning/async-http-client:1.9.39" level="project" />
     <orderEntry type="library" name="Leiningen: compliment:0.2.0" level="project" />
+    <orderEntry type="library" name="Leiningen: datascript:0.15.5" level="project" />
     <orderEntry type="library" name="Leiningen: http.async.client:1.2.0" level="project" />
+    <orderEntry type="library" name="Leiningen: io.aleph/dirigiste:0.1.3" level="project" />
+    <orderEntry type="library" name="Leiningen: io.netty/netty-all:4.1.0.CR3" level="project" />
     <orderEntry type="library" name="Leiningen: io.netty/netty:3.10.5.Final" level="project" />
+    <orderEntry type="library" name="Leiningen: manifold:0.1.4" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/clojure:1.8.0" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/core.async:0.2.385" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/core.cache:0.6.5" level="project" />
@@ -41,6 +48,9 @@
     <orderEntry type="library" name="Leiningen: org.slf4j/slf4j-api:1.7.12" level="project" />
     <orderEntry type="library" name="Leiningen: org.slf4j/slf4j-simple:1.7.12" level="project" />
     <orderEntry type="library" name="Leiningen: org.tcrawley/dynapath:0.2.3" level="project" />
+    <orderEntry type="library" name="Leiningen: potemkin:0.4.3" level="project" />
+    <orderEntry type="library" name="Leiningen: primitive-math:0.1.5" level="project" />
+    <orderEntry type="library" name="Leiningen: riddley:0.1.12" level="project" />
     <orderEntry type="library" name="Leiningen: tigris:0.1.1" level="project" />
   </component>
 </module>

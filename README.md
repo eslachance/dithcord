@@ -11,7 +11,7 @@ Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, 
 > This is a placeholder. I'm not on clojars.
 
 ```clj
- [dithcord "0.2.1"]
+ [dithcord "0.0.8"]
 ```
 
 ## Example
@@ -20,8 +20,7 @@ Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, 
 
 ```clj
 (ns dtbot.core
-  (:require [dithcord.core :as dithcord]
-            [clojure.edn :as edn]))
+  (:require [dithcord.core :as dithcord]))
 
 (defn handle-message [session message]
   (if (= (message :content) "!ping")
@@ -46,4 +45,5 @@ Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, 
 ## Credits
 
 - @Jagrosh#4824 : For coming up with the name "Dithcord".
+- @Trippeh#1782 for great work on the logo
 - My trusted allies on Discord for pushing me to succeed

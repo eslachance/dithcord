@@ -7,6 +7,7 @@
    :guild/id {:db/unique :db.unique/identity}
    :channel/id {:db/unique :db.unique/identity}
    :message/id {:db/unique :db.unique/identity}
+   :message/author {:db/type :db.type/ref}
    :role/id {:db/unique :db.unique/identity}
    :emoji/id {:db/unique :db.unique/identity}
    :presence/id {:db/unique :db.unique/identity}
@@ -19,12 +20,11 @@
 (defn get-conf [key]
      (:config/value (d/entity @conn [:config/key key])))
 
-(defn insert [data, type]
-  (let [inserts (into {:db/id -1} (map (fn [[k v]] [(keyword type (name k)) v]) data))
-        result (d/transact! conn
-                            [inserts])]
-    ;(d/resolve-tempid conn (:tempids result) (d/tempid (keyword "db.part" type) -1))
-    (first (first (:tx-data result)))))
+(defn insert! [data, type]
+          (let [inserts (into {:db/id -1}
+                              (filter some? (map (fn [[k v]] (if (some? v) [(keyword type (name k)) v])) data)))
+                result (d/transact! conn [inserts])]
+            (get (:tempids result) -1)))
 
 (defn get-item [type id]
   (seq (d/entity @conn [(keyword (str type "/id")) id])))
@@ -36,25 +36,27 @@
       :config/value value}]))
 
 (defn set-multi [type, datum]
+
   ;(doall )
   )
 
 (defn GUILD_CREATE [packet]
   (let [data (packet :d)
         guild (dissoc data :emojis :channels :roles :presences :members)]
-    (insert guild "guild")
+    (insert! guild "guild")
     (set-multi "emoji" (data :emojis))
     (set-multi "channel" (data :channels))
     (set-multi "roles" (data :roles))
     (set-multi "presence" (data :presence))
     (set-multi "member" (data :members))
     ))
+;data (packet :d)
 
-(defn MESSAGE_CREATE [packet]
-  (let [data (packet :d)
-        message (dissoc data :mentions :attachments :author :mention_roles)
-        user-ref (insert (message :author) "user")]
-    (insert (assoc message :author user-ref) "message")
+(defn MESSAGE_CREATE [data]
+  (let [message (dissoc data :mentions :attachments :author :mention_roles :embeds)
+        user-ref (insert! (message :author) "user")]
+    (prn (str "Inserting reference " user-ref " as an author to the message " (message :id)))
+    (insert! (assoc message :author user-ref) "message")
     ))
 
 

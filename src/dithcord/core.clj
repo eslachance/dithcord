@@ -88,11 +88,14 @@
 (defn handle-dispatch [session msg]
   ; This handler dispatches events to the client's handler functions.
   (when (= 0 (msg :op))
-    ;(prn (str "Handle Dispatch on " (msg :op) " " (msg :t)))
+    (prn (str "Handle Dispatch on " (msg :op) " " (msg :t)))
     (let [handler (get-in @session [:handlers (keyword (msg :t))])
           first-handler (first handler)
-          storage-handler (ns-resolve *ns* (symbol (msg :t)))]
-      (if-not (nil? storage-handler)
+          ;storage-handler (ns-resolve *ns* (symbol (msg :t)))
+          ]
+      (when (= (msg :t) "MESSAGE_CREATE")
+        (s/MESSAGE_CREATE (msg :d)))
+      #_(if-not (nil? storage-handler)
         (storage-handler (msg :d)))
       (if-not (nil? first-handler)
         (first-handler session (msg :d))

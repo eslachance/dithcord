@@ -2,9 +2,13 @@
   (:gen-class)
   (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put! alt!]]
             [cheshire.core :as json]
-            [http.async.client :as http]
-            [dithcord.storage :as s]
-            [datascript.core :as d]))
+            [aleph.http :as http]
+            [byte-streams :as bs]
+            [manifold.deferred :as d]
+            [manifold.bus :as bus]
+            [manifold.stream :as s]
+            [dithcord.storage :as ds]
+            ))
 
 (defn identify [token]
   {:op 2
@@ -17,51 +21,38 @@
                :compress true
                :large_threshold 250}})
 
-(defn set-interval
-  [f time-in-ms]
-  (let [stop (chan)]
-    (go-loop []
-      (alt!
-        (timeout time-in-ms)
-        (do (<! (thread (f)))
-            (recur))
-        stop :stop))
-    stop))
-
 (defn shutdown [session]
   (do
     (if (some? (:ws @session))
-      (http/close (:ws @session)))
+      (s/close! (:ws @session)))
     (if (some? (:ping-timer @session))
       (close! (:ping-timer @session)))
     (reset! session nil)))
 
+(defn set-interval
+  [f time-in-ms]
+  (let [stop (chan)]
+    (go-loop []
+               (alt!
+                 (timeout time-in-ms)
+                 (do (<! (thread (f)))
+                     (recur))
+                 stop :stop))
+    stop))
+
 (defn ping-pong [delay session]
   (do (prn "Starting PING")
       (let [next-id #(swap! (get @session :ping-counter) inc)
-            out-chan (get @session :chan-out)
+            out-chan (get @session :ws)
             timer (set-interval #(put! out-chan {:op 1 :d (next-id)}) delay)]
         (swap! session assoc :ping-timer timer))))
 
-(defn on-ws-open [ws session]
-  (prn "Connected to Discord API Websocket!"))
-
-(defn on-ws-close [ws status reason session]
-  (do
-    (prn (format "Connection closed [%s] : %s" status reason))
-    (shutdown session)
-    ))
-
-(defn on-ws-error [ws error session]
-  (do
-    (prn (str "Error Occured: " error))
-    (shutdown session)))
 
 (defn api-request [session, method, url, data, file])
 
 (defn send-message [session msg channel]
   (prn (str "Received send-message command on " channel " : " msg))
-  (let [client (http/create-client :follow-redirects true)
+  #_(let [client (http/create-client :follow-redirects true)
         resp (http/POST
                client
                (str "https://discordapp.com/api/v6/channels/" channel "/messages")
@@ -94,7 +85,7 @@
           ;storage-handler (ns-resolve *ns* (symbol (msg :t)))
           ]
       (when (= (msg :t) "MESSAGE_CREATE")
-        (s/MESSAGE_CREATE (msg :d)))
+        (ds/MESSAGE_CREATE (msg :d)))
       #_(if-not (nil? storage-handler)
         (storage-handler (msg :d)))
       (if-not (nil? first-handler)
@@ -106,39 +97,36 @@
    handle-hello
    handle-dispatch])
 
-(defn on-message [ws msg session]
+(defn on-ws-close [session]
+  (do
+    (prn (format "WebSocket Connection closed"))
+    (shutdown session)
+    ))
+
+(defn on-message [msg session]
   (let [debug-handler (get-in @session [:handlers :debug])]
     (spit "event.log" (str msg "\r\n") :append true)
     (if-not (nil? debug-handler)
       (debug-handler session msg))
     (doall (map #(apply % [session msg]) (:internal-handlers @session))))
-)
+  )
 
-(defn connect-raw [state]
+(defn ws-connect
+  "Creates a websocket Connection to Discord API"
+  [state]
   (let [session (atom state)
-        client (http/create-client :follow-redirects true :compression-enabled true)
-        ws (http/websocket client
-                           "wss://gateway.discord.gg/?v=6&encoding=json"
-                           :open #(on-ws-open % session)
-                           :close #(on-ws-close %1 %2 %3 session)
-                           :error #(on-ws-error %1 %2 session)
-                           :text #(on-message %1 (json/parse-string %2 true) session))
-        out-channel (chan)]
+        ws @(http/websocket-client "wss://gateway.discord.gg/v?6&encoding=json")]
+    (s/on-closed ws #(on-ws-close session))
+    (str ws)
     (swap! session assoc :socket ws)
-    (swap! session assoc :chan-out out-channel)
     (swap! session assoc :ping-counter (atom 0))
-    (go-loop []
-      (let [m (<! out-channel)
-            s (json/generate-string m)]
-        (prn "Outputting Message to Socket: " s)
-        (http/send ws :text s)
-        (recur)))
-    session))
+    session
+    ))
 
 (defn connect [state]
-  (connect-raw
-    (merge state
-           {:internal-handlers internal-handlers})))
+  (let [full-state (merge state {:internal-handlers internal-handlers})
+        session (ws-connect [full-state])]
+    (s/consume #(on-message (json/parse-string %1 true) session) (:ws @session))))
 
 
 (defn -main

@@ -1,13 +1,10 @@
 (ns dithcord.core
   (:gen-class)
-  (:require [clojure.core.async :refer [<! <!! >! go-loop thread timeout chan close! put! alt!]]
-            [cheshire.core :as json]
+  (:require [cheshire.core :as json]
             [aleph.http :as http]
-            [byte-streams :as bs]
-            [manifold.deferred :as d]
-            [manifold.bus :as bus]
             [manifold.stream :as s]
             [dithcord.storage :as ds]
+            [dithcord.zip :as z]
             ))
 
 (defn identify [token]
@@ -22,26 +19,22 @@
                :large_threshold 250}})
 
 (defn send-ws [session msg]
-  (s/put! (:socket @session) (json/generate-string msg)))
+  (let [m (json/generate-string msg)
+        conn (:socket @session)]
+    (prn (str m))
+    (prn ())
+    (s/put! conn m)))
 
 (defn shutdown [session]
   (do
-    (if (some? (:ws @session))
-      (s/close! (:ws @session)))
+    (if (some? (:socket @session))
+      (s/close! (:socket @session)))
     (if (some? (:ping-timer @session))
-      (close! (:ping-timer @session)))
+      (future-cancel (:ping-timer @session)))
     (reset! session nil)))
 
-(defn set-interval
-  [f time-in-ms]
-  (let [stop (chan)]
-    (go-loop []
-               (alt!
-                 (timeout time-in-ms)
-                 (do (<! (thread (f)))
-                     (recur))
-                 stop :stop))
-    stop))
+(defn set-interval [callback ms]
+  (future (while true (do (Thread/sleep ms) (callback)))))
 
 (defn ping-pong [delay session]
   (do (prn "Starting PING")
@@ -53,19 +46,19 @@
 
 (defn send-message [session msg channel]
   (prn (str "Received send-message command on " channel " : " msg))
-  #_(let [client (http/create-client :follow-redirects true)
-        resp (http/POST
-               client
+  (let [resp @(http/post
                (str "https://discordapp.com/api/v6/channels/" channel "/messages")
-               :body {:content msg}
-               :headers {"Authorization" (str "Bot " (get @session :token))
-                        "Content-type" "application/x-www-form-urlencoded"
-                        "Content-length" 13})]
+               :keys {
+                      :body {:content msg}
+                      :headers {:Authorization (str "Bot " (get @session :token))
+                                :Content-Type "application/x-www-form-urlencoded"
+                                :Content-Length 13}
+                      })]
     resp))
 
 (defn handle-hello [session msg]
   (when (= 10 (msg :op))
-    (let [identify-packet (identify (get @session :token))]
+    (let [identify-packet (identify (:token @session))]
       (prn "Executing Handle Hello")
       (send-ws session identify-packet)
       (ping-pong (-> msg :d :heartbeat_interval) session)
@@ -100,24 +93,27 @@
 (defn on-ws-close [session]
   (do
     (prn (format "WebSocket Connection closed"))
-    ;(shutdown session)
+    (shutdown session)
     ))
 
 (defn on-message [msg session]
-  (let [m (json/parse-string msg true)]
-    (prn m))  )
-  #_(let [debug-handler (get-in @session [:handlers :debug])]
-    (spit "event.log" (str msg "\r\n") :append true)
-    (if-not (nil? debug-handler)
-      (debug-handler session msg))
-    (doall (map #(apply % [session msg]) (:internal-handlers @session))))
+  (let [st (if (instance? String msg)
+             msg
+             (String. (byte-array (z/inflate msg))))
+        m (json/parse-string st true)]
+    (spit "event.log"  (str m "\r\n")  :append true)
+    (when-let [debug-handler (get-in @session [:handlers :debug])]
+      (debug-handler session m))
+    (handle-hello session m)
+    (run! #(apply % [session m]) (:internal-handlers @session))
+    ))
 
 
 (defn ws-connect
   "Creates a websocket Connection to Discord API"
   [state]
   (let [session (atom state)
-        ws @(http/websocket-client "wss://gateway.discord.gg/v?6&encoding=json")]
+        ws @(http/websocket-client "wss://gateway.discord.gg/?v=6&encoding=json")]
     (s/consume #(on-message %1 session) ws)
     (swap! session assoc :socket ws)
     (swap! session assoc :ping-counter (atom 0))

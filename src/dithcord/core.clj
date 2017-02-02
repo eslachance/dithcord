@@ -48,12 +48,9 @@
   (prn (str "Received send-message command on " channel " : " msg))
   (let [resp @(http/post
                (str "https://discordapp.com/api/v6/channels/" channel "/messages")
-               :keys {
-                      :body {:content msg}
-                      :headers {:Authorization (str "Bot " (get @session :token))
-                                :Content-Type "application/x-www-form-urlencoded"
-                                :Content-Length 13}
-                      })]
+               {:body (json/generate-string {:content msg})
+                :headers {"Authorization" (str "Bot " (get @session :token))
+                          "Content-type" "application/x-www-form-urlencoded"}})]
     resp))
 
 (defn handle-hello [session msg]
@@ -104,7 +101,6 @@
     (spit "event.log"  (str m "\r\n")  :append true)
     (when-let [debug-handler (get-in @session [:handlers :debug])]
       (debug-handler session m))
-    (handle-hello session m)
     (run! #(apply % [session m]) (:internal-handlers @session))
     ))
 

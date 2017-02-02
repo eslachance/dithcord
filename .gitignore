@@ -1,6 +1,7 @@
 config.edn
 pom.xml
 pom.xml.asc
+*.log
 *jar
 /lib/
 /classes/

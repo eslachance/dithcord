@@ -1,63 +1,110 @@
 (ns dithcord.storage
   (:gen-class)
-  (:require [datascript.core :as d]))
+  (:require [datascript.core :as d]
+            [clojure.string :as str]))
 
 (def schema
-  {:config/key {:db/unique :db.unique/identity}
-   :guild/id {:db/unique :db.unique/identity}
+  {:guild/id {:db/unique :db.unique/identity}
    :channel/id {:db/unique :db.unique/identity}
    :message/id {:db/unique :db.unique/identity}
-   :message/author {:db/type :db.type/ref}
    :role/id {:db/unique :db.unique/identity}
    :emoji/id {:db/unique :db.unique/identity}
    :presence/id {:db/unique :db.unique/identity}
-   :member/id {:db/unique :db.unique/identity}
    :user/id {:db/unique :db.unique/identity}
+   :user {:db/type :db.type/ref}
+   :guild {:db/type :db.type/ref}
+   :channel {:db/type :db.type/ref}
    })
 
 (def conn (d/create-conn schema))
 
-(defn get-conf [key]
-     (:config/value (d/entity @conn [:config/key key])))
-
 (defn insert! [data, type]
-          (let [inserts (into {:db/id -1}
-                              (filter some? (map (fn [[k v]] (if (some? v) [(keyword type (name k)) v])) data)))
-                result (d/transact! conn [inserts])]
-            (get (:tempids result) -1)))
+  (let [inserts (into {:db/id -1}
+                      (filter some? (map (fn [[k v]] (if (some? v) [(keyword type (name k)) v])) data)))
+        result (d/transact! conn [inserts])]
+    ;(get (:tempids result) -1)
+    result
+    ))
 
 (defn get-item [type id]
   (seq (d/entity @conn [(keyword (str type "/id")) id])))
 
-(defn set-conf [key value]
-  (d/transact!
-    conn
-    [{:config/key key
-      :config/value value}]))
+(defn underscore->dash [v]
+  (str/replace v #"_" "-"))
 
-(defn set-multi [type, datum]
+(defn singular [v]
+  (str/replace v #"s$" ""))
 
-  ;(doall )
-  )
+(defn namespace-map [ns coll]
+  (->> coll
+       (map (fn [[k v]]
+              [(keyword (underscore->dash ns)
+                        (underscore->dash (name k)))
+               v]))
+       (remove (comp nil? second))
+       (into {})))
 
-(defn GUILD_CREATE [packet]
-  (let [data (packet :d)
-        guild (dissoc data :emojis :channels :roles :presences :members)]
-    (insert! guild "guild")
-    (set-multi "emoji" (data :emojis))
-    (set-multi "channel" (data :channels))
-    (set-multi "roles" (data :roles))
-    (set-multi "presence" (data :presence))
-    (set-multi "member" (data :members))
-    ))
-;data (packet :d)
+(defn children? [coll]
+  (and (sequential? coll) (every? map? coll)))
 
-(defn MESSAGE_CREATE [data]
-  (let [message (dissoc data :mentions :attachments :author :mention_roles :embeds)
-        user-ref (insert! (message :author) "user")]
-    (prn (str "Inserting reference " user-ref " as an author to the message " (message :id)))
-    (insert! (assoc message :author user-ref) "message")
-    ))
+(defn rel? [x]
+  (and (map? x)
+       (= (count x) 1)
+       (contains? x :id)))
+
+(defn entity? [x]
+  (and (map? x)
+       (> (count x) 1)
+       (contains? x :id)))
+
+(defn inlinable? [x]
+  (and (map? x)
+       (not (contains? x :id))))
+
+(defn flatten-fact [fact]
+  (loop [result {}
+         fact fact
+         acc []]
+    (if-not (empty? fact)
+      (let [[k v] (first fact)]
+        (cond
+          (rel? v)
+          (recur (assoc result (keyword (name k)) [(keyword (name k) "id") (:id v)])
+                 (rest fact)
+                 acc)
+          (entity? v)
+          (recur (assoc result (keyword (name k)) [(keyword (name k) "id") (:id v)])
+                 (rest fact)
+                 (conj acc (namespace-map (name k) v)))
+          (inlinable? v)
+          (recur (merge result (namespace-map (name k) v))
+                 (rest fact)
+                 acc)
+          :else
+          (recur (assoc result k v)
+                 (rest fact)
+                 acc)))
+      [result acc])))
+
+(defn flatten-map
+  ([children]
+   (flatten-map children nil))
+  ([children template]
+   (apply concat
+          (for [[k v] children
+                row v]
+            (let [entity (singular (name k))
+                  [fact rels] (->> (remove (comp children? second) row)
+                                   (namespace-map entity)
+                                   (flatten-fact))
+                  children (filter (comp children? second) row)]
+              (concat
+                rels
+                [(merge template fact)]
+                (flatten-map children {(keyword entity) [(keyword entity "id") (:id row)]})))))))
+
+(defn sort-facts [facts]
+  (sort-by #(or (get (clojure.walk/stringify-keys %) "id") "z") facts))
 
 
 (defn -main []

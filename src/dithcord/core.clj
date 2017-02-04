@@ -3,8 +3,10 @@
   (:require [cheshire.core :as json]
             [aleph.http :as http]
             [manifold.stream :as s]
-            [dithcord.storage :as ds]
+            [dithcord.storage :as db]
+            [datascript.core :as d]
             [dithcord.zip :as z]
+            [clojure.string :as str]
             ))
 
 (defn identify [token]
@@ -21,8 +23,6 @@
 (defn send-ws [session msg]
   (let [m (json/generate-string msg)
         conn (:socket @session)]
-    (prn (str m))
-    (prn ())
     (s/put! conn m)))
 
 (defn shutdown [session]
@@ -56,14 +56,14 @@
 (defn handle-hello [session msg]
   (when (= 10 (msg :op))
     (let [identify-packet (identify (:token @session))]
-      (prn "Executing Handle Hello")
+      (prn "Authenticating to the Discord API...")
       (send-ws session identify-packet)
       (ping-pong (-> msg :d :heartbeat_interval) session)
       )))
 
 (defn handle-ready [session msg]
   (when (and (= 0 (msg :op)) (= "READY" (msg :t)))
-    (prn (str "Handle Ready on " (msg :op)))
+    (prn "Receiving Hello ")
     (swap! session assoc :session-id (-> msg :d :session_id))))
 
 (defn handle-dispatch [session msg]
@@ -72,12 +72,9 @@
     (prn (str "Handle Dispatch on " (msg :op) " " (msg :t)))
     (let [handler (get-in @session [:handlers (keyword (msg :t))])
           first-handler (first handler)
-          ;storage-handler (ns-resolve *ns* (symbol (msg :t)))
+          map-name (-> (str/split (msg :t) #"_") first str/lower-case)
           ]
-      (when (= (msg :t) "MESSAGE_CREATE")
-        (ds/MESSAGE_CREATE (msg :d)))
-      #_(if-not (nil? storage-handler)
-        (storage-handler (msg :d)))
+      (d/transact! db/conn (db/sort-facts (db/flatten-map {(keyword map-name) [(msg :d)]})))`
       (if-not (nil? first-handler)
         (first-handler session (msg :d))
         ))))
@@ -104,22 +101,16 @@
     (run! #(apply % [session m]) (:internal-handlers @session))
     ))
 
-
-(defn ws-connect
+(defn connect
   "Creates a websocket Connection to Discord API"
   [state]
-  (let [session (atom state)
+  (let [full-state (merge state {:internal-handlers internal-handlers})
+        session (atom full-state)
         ws @(http/websocket-client "wss://gateway.discord.gg/?v=6&encoding=json")]
     (s/consume #(on-message %1 session) ws)
     (swap! session assoc :socket ws)
     (swap! session assoc :ping-counter (atom 0))
     (s/on-closed ws #(on-ws-close session))
-    session
-    ))
-
-(defn connect [state]
-  (let [full-state (merge state {:internal-handlers internal-handlers})
-        session (ws-connect full-state)]
     session
     ))
 

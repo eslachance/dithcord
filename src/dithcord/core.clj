@@ -7,6 +7,7 @@
             [datascript.core :as d]
             [dithcord.zip :as z]
             [clojure.string :as str]
+            [byte-streams :as bs]
             ))
 
 (defn identify [token]
@@ -22,8 +23,9 @@
 
 (defn send-ws [session msg]
   (let [m (json/generate-string msg)
-        conn (:socket @session)]
-    (s/put! conn m)))
+        socket (:socket @session)]
+    (prn (str "Sending Message to websocket: " m " on " socket))
+    (s/put! socket m)))
 
 (defn shutdown [session]
   (do
@@ -42,16 +44,26 @@
             timer (set-interval #(send-ws session {:op 1 :d (next-id)}) delay)]
         (swap! session assoc :ping-timer timer))))
 
-(defn api-request [session, method, url, data, file])
+(defn api-fetch [session part]
+  (let [resp @(http/get (str "https://discordapp.com/api/v6" part)
+                        {:headers {"Authorization" (str "Bot " (get @session :token))}})]
+    (json/parse-string (bs/to-string (resp :body)) true)))
+
+(defn api-post [session part data]
+  (let [resp @(http/post
+                (str "https://discordapp.com/api/v6" part)
+                {:body (json/generate-string {:content data})
+                 :headers {"Authorization" (str "Bot " (@session :token))
+                           "Content-type" "application/x-www-form-urlencoded"}})]
+    resp))
 
 (defn send-message [session msg channel]
   (prn (str "Received send-message command on " channel " : " msg))
-  (let [resp @(http/post
-               (str "https://discordapp.com/api/v6/channels/" channel "/messages")
-               {:body (json/generate-string {:content msg})
-                :headers {"Authorization" (str "Bot " (get @session :token))
-                          "Content-type" "application/x-www-form-urlencoded"}})]
-    resp))
+  (api-post session (str "/channels/" channel "/messages") msg))
+
+(defn change-nick [session guild user new-nick]
+  (prn (str "Change nickname for " (user :id) " to " new-nick " on guild " (guild :id)))
+  (api-post session (str "/guilds/" (guild :id) "/members/") {:nick new-nick}))
 
 (defn handle-hello [session msg]
   (when (= 10 (msg :op))
@@ -64,20 +76,22 @@
 (defn handle-ready [session msg]
   (when (and (= 0 (msg :op)) (= "READY" (msg :t)))
     (prn "Receiving Hello ")
-    (swap! session assoc :session-id (-> msg :d :session_id))))
+    (swap! session assoc :session-id (-> msg :d :session_id))
+    (swap! session assoc :user (api-fetch session "/users/@me"))))
 
 (defn handle-dispatch [session msg]
   ; This handler dispatches events to the client's handler functions.
   (when (= 0 (msg :op))
-    (prn (str "Handle Dispatch on " (msg :op) " " (msg :t)))
+    (prn (str "Handling Dispatch on " (msg :op) " " (msg :t)))
     (let [handler (get-in @session [:handlers (keyword (msg :t))])
           first-handler (first handler)
-          map-name (-> (str/split (msg :t) #"_") first str/lower-case)
-          ]
-      (d/transact! db/conn (db/sort-facts (db/flatten-map {(keyword map-name) [(msg :d)]})))`
-      (if-not (nil? first-handler)
-        (first-handler session (msg :d))
-        ))))
+          map-name (-> (str/split (msg :t) #"_") first str/lower-case)]
+      ;(d/transact! db/conn (db/sort-facts (db/flatten-map {(keyword map-name) [(msg :d)]})))
+
+      (when (some? first-handler)
+        (prn (str "Running handler for " (msg :d)))
+        (first-handler session (msg :d)))
+      )))
 
 (def internal-handlers
   [handle-ready

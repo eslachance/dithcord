@@ -89,23 +89,33 @@
 (defn flatten-map
   ([children]
    (flatten-map children nil))
-  ([children template]
+  ([children process-fns]
+   (flatten-map children process-fns nil))
+  ([children process-fns template]
    (apply concat
           (for [[k v] children
                 row v]
             (let [entity (singular (name k))
+                  process-fn (get process-fns (keyword (underscore->dash entity)) identity)
                   [fact rels] (->> (remove (comp children? second) row)
+                                   (into {})
+                                   (process-fn)
                                    (namespace-map entity)
                                    (flatten-fact))
                   children (filter (comp children? second) row)]
               (concat
                 rels
                 [(merge template fact)]
-                (flatten-map children {(keyword entity) [(keyword entity "id") (:id row)]})))))))
+                (flatten-map children process-fns {(keyword entity) [(keyword entity "id") (:id row)]})))))))
 
 (defn sort-facts [facts]
   (sort-by #(or (get (clojure.walk/stringify-keys %) "id") "z") facts))
 
+
+(defn massage [session packet type]
+  (case type
+    "PRESENCE_UPDATE" nil
+    "default" nil))
 
 (defn -main []
   ;blah

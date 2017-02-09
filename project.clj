@@ -1,4 +1,4 @@
-(defproject dithcord "0.0.8"
+(defproject org.eslachance/dithcord "0.0.10"
   :description "A Discord Bot Library written in Clojure"
   :url "https://github.com/eslachance/dithcord"
   :license {:name "Eclipse Public License"

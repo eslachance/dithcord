@@ -9,7 +9,6 @@
    :message/id {:db/unique :db.unique/identity}
    :role/id {:db/unique :db.unique/identity}
    :emoji/id {:db/unique :db.unique/identity}
-   :presence/id {:db/unique :db.unique/identity}
    :user/id {:db/unique :db.unique/identity}
    :user {:db/type :db.type/ref}
    :guild {:db/type :db.type/ref}
@@ -111,11 +110,25 @@
 (defn sort-facts [facts]
   (sort-by #(or (get (clojure.walk/stringify-keys %) "id") "z") facts))
 
-
-(defn massage [session packet type]
-  (case type
-    "PRESENCE_UPDATE" nil
-    "default" nil))
+(defn massage [session msg type]
+  (let [packet (msg :d)
+        map-name (-> (str/split (msg :t) #"_") first str/lower-case)]
+    (case type
+      "PRESENCE_UPDATE" (let [newpacket {:user-id (-> packet :user :id)
+                                         :guild-id (packet :guild_id)
+                                         :nick (packet :nick)
+                                         :author {:id (-> packet :user :id)
+                                                  :status (packet :status)
+                                                  :game (packet :game)}}]
+                          (d/transact! conn (sort-facts (flatten-map {:presence [newpacket]}))))
+      "default" (let [filters {:permission-overwrite
+                               (fn [row]
+                                 (let [ref-key (keyword (str (:type row) "-id"))
+                                       ref-id (:id row)]
+                                   (-> row
+                                       (dissoc :id)
+                                       (assoc ref-key ref-id))))}]
+                  (d/transact! conn (sort-facts (flatten-map {(keyword map-name) [packet]} filters)))))))
 
 (defn -main []
   ;blah

@@ -1,4 +1,5 @@
 (ns dithcord.core
+  "Core functions for interacting with Discord API."
   (:gen-class)
   (:require [cheshire.core :as json]
             [aleph.http :as http]

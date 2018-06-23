@@ -1,4 +1,5 @@
 (ns dithcord.core
+  "Core functions for interacting with Discord API."
   (:gen-class)
   (:require [cheshire.core :as json]
             [aleph.http :as http]
@@ -22,17 +23,21 @@
                :large_threshold 250}})
 
 (defn log [session type msg]
+  "Logs `msg` in a specified handler `type` for the current `session`.  Handler function should be some
+   logging function."
   (let [handler (first (get-in @session [:handlers (keyword type)]))]
     (when (some? handler)
       (handler session msg))))
 
 (defn send-ws [session msg]
+  "Send `msg` over websocket in current `session`."
   (let [m (json/generate-string msg)
         socket (:socket @session)]
     (log session "debug"  (str "Sending Message to websocket: " m " on " socket))
     (s/put! socket m)))
 
 (defn shutdown [session]
+  "Stop the current `session`."
   (do
     (if (some? (:socket @session))
       (s/close! (:socket @session)))
@@ -50,11 +55,13 @@
         (swap! session assoc :ping-timer timer))))
 
 (defn api-fetch [session part]
+  "Submit HTTP GET request on the Discord API for the current `session` on the URI `part`."
   (let [resp @(http/get (str "https://discordapp.com/api/v6" part)
                         {:headers {"Authorization" (str (if (-> @session :user :bot) "Bot ") (get @session :token))}})]
     (json/parse-string (bs/to-string (resp :body)) true)))
 
 (defn api-post [session part data]
+  "Submit HTTP POST request on the Discord API for the current `session` on the URI `part` using the payload `data`."
   (let [resp @(http/post
                 (str "https://discordapp.com/api/v6" part)
                 {:body (json/generate-string {:content data})
@@ -63,10 +70,12 @@
     resp))
 
 (defn send-message [session msg channel]
+  "Send a `msg` to a Discord `channel` for the current `session`."
   (log session "debug"  (str "Received send-message command on " channel " : " msg))
   (api-post session (str "/channels/" channel "/messages") msg))
 
 (defn change-nick [session guild user new-nick]
+  "Changes the `guild` level nickname of `user` to `new-nick` in the current `session`."
   (log session "debug" (str "Change nickname for " (user :id) " to " new-nick " on guild " (guild :id)))
   (api-post session (str "/guilds/" (guild :id) "/members/") {:nick new-nick}))
 
@@ -128,7 +137,7 @@
     ))
 
 (defn connect
-  "Creates a websocket Connection to Discord API"
+  "Creates a websocket Connection to Discord API.  Returns session atom."
   [state]
   (let [full-state (merge state {:internal-handlers internal-handlers})
         session (atom full-state)

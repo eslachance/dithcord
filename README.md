@@ -45,5 +45,5 @@ Dithcord is a **WORK IN PROGRESS** library for Discord Bots. And by WIP I mean, 
 ## Credits
 
 - @Jagrosh#4824 : For coming up with the name "Dithcord".
-- [@daftao](https://github.com/daftao) for this awesome new logo
+- [@vaalha](https://github.com/vaalha) for this awesome new logo
 - My trusted allies on Discord for pushing me to succeed
